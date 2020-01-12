@@ -29,6 +29,7 @@ class BackgroundRender extends Component {
     this.camera.position.z = this.zSegCount;
 
     this.infoContainer = document.querySelector(".background-render-info");
+    this.lastFrame = Date.now();
   }
 
   initViewport() {
@@ -172,15 +173,20 @@ class BackgroundRender extends Component {
       this.createZSegment();
     }
 
+    const now = Date.now();
+
     if (this.renderer) {
-    this.infoContainer.innerText =
-      `frame: ${this.renderer.info.render.frame}\n` +
-      `geometries: ${this.renderer.info.memory.geometries}\n` +
-      `textures: ${this.renderer.info.memory.textures}\n` +
-      `lines: ${this.renderer.info.render.lines}\n` +
-      `triangles: ${this.renderer.info.render.triangles}\n` +
-      `points: ${this.renderer.info.render.points}\n`;
+      this.infoContainer.innerText =
+        `frame: ${this.renderer.info.render.frame}\n` +
+        `fps: ${Math.round(1000 / (now - this.lastFrame))}\n` +
+        `geometries: ${this.renderer.info.memory.geometries}\n` +
+        `textures: ${this.renderer.info.memory.textures}\n` +
+        `lines: ${this.renderer.info.render.lines}\n` +
+        `triangles: ${this.renderer.info.render.triangles}\n` +
+        `points: ${this.renderer.info.render.points}\n`;
     }
+
+    this.lastFrame = now;
 
     // render the frame, and set up the next frame request
     this.renderer.render(this.scene, this.camera);
