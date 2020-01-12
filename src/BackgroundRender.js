@@ -1,4 +1,4 @@
-import React, { Component } from "react";
+import React, { Component, Fragment } from "react";
 import "./BackgroundRender.css";
 import * as THREE from "three";
 
@@ -24,13 +24,11 @@ class BackgroundRender extends Component {
     this.camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
     this.renderer = new THREE.WebGLRenderer();
 
-    // x = left / right
-    // y = up / down
-    // z = forward / backward
-
     this.camera.position.x = this.xSegCount / 2
     this.camera.position.y = 4;
     this.camera.position.z = this.zSegCount;
+
+    this.infoContainer = document.querySelector(".background-render-info");
   }
 
   initViewport() {
@@ -174,6 +172,16 @@ class BackgroundRender extends Component {
       this.createZSegment();
     }
 
+    if (this.renderer) {
+    this.infoContainer.innerText =
+      `frame: ${this.renderer.info.render.frame}\n` +
+      `geometries: ${this.renderer.info.memory.geometries}\n` +
+      `textures: ${this.renderer.info.memory.textures}\n` +
+      `lines: ${this.renderer.info.render.lines}\n` +
+      `triangles: ${this.renderer.info.render.triangles}\n` +
+      `points: ${this.renderer.info.render.points}\n`;
+    }
+
     // render the frame, and set up the next frame request
     this.renderer.render(this.scene, this.camera);
     this.nextFrameID = requestAnimationFrame(() => this.animate());
@@ -201,8 +209,10 @@ class BackgroundRender extends Component {
 
   render() {
     return (
-      <div className="background-render-container">
-      </div>
+      <Fragment>
+        <div className="background-render-container"></div>
+        <pre className="background-render-info"></pre>
+      </Fragment>
     );
   }
 }

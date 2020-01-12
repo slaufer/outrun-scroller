@@ -7,9 +7,6 @@ class App extends Component {
     return (
       <div className="App">
         <BackgroundRender />
-        <div className="test-div">
-          React + three.js test app
-        </div>
       </div>
     );
   }
