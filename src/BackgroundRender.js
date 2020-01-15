@@ -13,7 +13,7 @@ class BackgroundRender extends Component {
     this.container = null;
     this.config = {};
     this.config.segs = {
-      x: 40,
+      x: 50,
       z: 50
     };
     this.config.cameraPosition = {
@@ -129,19 +129,22 @@ class BackgroundRender extends Component {
 
     // add a fullbright lightsource so we can see meshes
     // this.scene.add(new THREE.AmbientLight(0xffffff));
-
-    // create the first z-segment
-    this.createZSegment();
   }
 
   getMaxY() {
     return (
       2 *
-      (this.config.terrain.sinIntensity.x +
+      (
+        this.config.terrain.sinIntensity.x +
         this.config.terrain.sinIntensity.z +
         this.config.terrain.cosIntensity.x +
-        this.config.terrain.cosIntensity.z) *
-      Math.pow((this.config.segs.x / 2) * this.config.terrain.valleyFactor, this.config.terrain.valleyPower)
+        this.config.terrain.cosIntensity.z
+      ) *
+      Math.pow(
+        (this.config.segs.x / 2) * this.config.terrain.valleyFactor,
+        this.config.terrain.valleyPower
+      ) *
+      (this.config.segs.x / 2 - 1) * this.config.terrain.modFactor
     );
   }
 
@@ -181,7 +184,7 @@ class BackgroundRender extends Component {
 
     const lineGroup = new THREE.Group();
     lineGroup.position.x = -this.config.segs.x / 2;
-    lineGroup.position.y = 0.001;
+    lineGroup.position.y = 0.01;
     group.add(lineGroup);
 
     const meshGroup = new THREE.Group();
@@ -250,27 +253,36 @@ class BackgroundRender extends Component {
 
     for (const mesh of segment.meshGroup.children) {
       mesh.geometry.dispose();
-      //mesh.material.dispose();
+      // mesh.material.dispose();
     }
   }
 
   animate() {
+    // figure out how far we need to move since the last frame
     const now = Date.now();
     this.lastFrameTime = this.lastFrameTime || now;
     const step = (now - this.lastFrameTime) * this.config.speed
     this.lastFrameTime = now;
 
+    // advance z-segments
     for (const zSeg of this.zSegs) {
       zSeg.group.position.z += step;
     }
 
-    // TODO: improve this code to prevent segments from being skipped at high speeds
-    if (this.zSegs[this.zSegs.length - 1].group.position.z >= 1) {
-      this.createZSegment(this.zSegs[this.zSegs.length - 1].group.position.z - 1);
+    // destroy any z-segments that have gone beyond the near boundary
+    while (this.zSegs.length > 0 && this.zSegs[0].group.position.z >= this.config.segs.z) {
+      this.destroyZSegment(this.zSegs.shift());
     }
 
-    if (this.zSegs[0].group.position.z >= this.config.segs.z) {
-      this.destroyZSegment(this.zSegs.shift());
+    // if there are no z-segments left, create one at the near boundary so we'll create the rest next
+    if (this.zSegs.length === 0) {
+      this.createZSegment(this.config.segs.z);
+    }
+
+    // create new z-segments until we reach the far boundary
+    while (this.zSegs[this.zSegs.length - 1].group.position.z >= 1) {
+      // create the new z-segment right beyond the nearest z-segment
+      this.createZSegment(this.zSegs[this.zSegs.length - 1].group.position.z - 1);
     }
 
     const timeSinceLastInfo = now - this.lastInfoTime;
