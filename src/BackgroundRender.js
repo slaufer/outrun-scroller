@@ -13,11 +13,11 @@ class BackgroundRender extends Component {
     this.container = null;
     this.config = {};
     this.config.segs = {
-      x: 50,
-      z: 50
+      x: 40,
+      z: 80
     };
     this.config.cameraPosition = {
-      y: 2.5,
+      y: 1.5,
       z: this.config.segs.z
     };
     this.config.terrain = {
@@ -27,7 +27,7 @@ class BackgroundRender extends Component {
       cosFrequency: { x: Math.random(), z: Math.random() },
       cosIntensity: { x: 0.025 * this.config.segs.x, z: 0.025 * this.config.segs.x },
       cosOffset: { x: Math.random() * Math.PI, z: Math.random() * Math.PI },
-      valleyFactor: 4 / this.config.segs.x,
+      valleyFactor: 3 / this.config.segs.x,
       valleyPower: 2,
       modFactor: 3 / this.config.segs.x
     };
@@ -41,13 +41,14 @@ class BackgroundRender extends Component {
     this.zSegCount = 0;
     this.zSegs = [];
 
-    this.meshNormal = new THREE.Vector3(0, 1, 1);
     this.meshMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    this.lineMats = {};
   }
 
   initScene() {
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
+    this.scene.background = new THREE.Color(0x000011);
+    this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
     this.renderer = new THREE.WebGLRenderer();
 
     // move the camera up so that we don't just see a flat line
@@ -126,9 +127,6 @@ class BackgroundRender extends Component {
     // move the sunGroup up so the bottom is flush with z=0
     sunGroup.position.y = r / 2;
     this.scene.add(sunGroup);
-
-    // add a fullbright lightsource so we can see meshes
-    // this.scene.add(new THREE.AmbientLight(0xffffff));
   }
 
   getMaxY() {
@@ -176,6 +174,21 @@ class BackgroundRender extends Component {
     return y;
   }
 
+  // this function caches line materials so we aren't constantly creating and destroying them, since
+  // there should be a pretty limited number of possible materials
+  getLineMat(...yVals) {
+    const y = Math.max(...yVals);
+    let lineSat = 255 - (Math.floor(y * 159 / this.getMaxY()) + 96);
+    lineSat = Math.min(lineSat, 255);
+    lineSat = Math.max(lineSat, 0);
+
+    if (!this.lineMats[lineSat]) {
+      this.lineMats[lineSat] = new THREE.LineBasicMaterial({ color: `rgb(0, ${lineSat}, ${lineSat})` });
+    }
+
+    return this.lineMats[lineSat];
+  }
+
   // creates a z segment and drops it at z=0, to be moved by animate()
   // featuring the world's shittiest terrain generator
   createZSegment(zPos = 0) {
@@ -187,9 +200,11 @@ class BackgroundRender extends Component {
     lineGroup.position.y = 0.01;
     group.add(lineGroup);
 
-    const meshGroup = new THREE.Group();
-    meshGroup.position.x = -this.config.segs.x / 2;
-    group.add(meshGroup);
+    // const meshGroup = new THREE.Group();
+    // meshGroup.position.x = -this.config.segs.x / 2;
+    // group.add(meshGroup);
+
+    const meshGeo = new THREE.Geometry();
 
     for (let x = -1; x < this.config.segs.x; x++) {
       const y0 = this.getY(x, this.zSegCount);
@@ -197,10 +212,10 @@ class BackgroundRender extends Component {
       const y2 = this.getY(x + 1, this.zSegCount - 1);
       const y3 = this.getY(x, this.zSegCount - 1);
 
-      const v0 = new THREE.Vector3(0, y0, 0);
-      const v1 = new THREE.Vector3(1, y1, 0);
-      const v2 = new THREE.Vector3(1, y2, 1);
-      const v3 = new THREE.Vector3(0, y3, 1);
+      const v0 = new THREE.Vector3(x + 0, y0, 0);
+      const v1 = new THREE.Vector3(x + 1, y1, 0);
+      const v2 = new THREE.Vector3(x + 1, y2, 1);
+      const v3 = new THREE.Vector3(x + 0, y3, 1);
 
       const lineGeo = new THREE.Geometry();
       lineGeo.vertices.push(v0, v1, v2);
@@ -213,30 +228,28 @@ class BackgroundRender extends Component {
       // camera's FOV
       if (this.zSegCount === 0) lineGeo.vertices.pop();
 
-      const lineSat = Math.floor((Math.max(y0, y1) * 223) / this.getMaxY()) + 32;
-      const lineMat = new THREE.LineBasicMaterial({ color: `rgb(0, ${lineSat}, ${lineSat})` });
-      const line = new THREE.Line(lineGeo, lineMat);
-      line.position.x = x;
+      const line = new THREE.Line(lineGeo, this.getLineMat(y0, y1, y2));
       lineGroup.add(line);
 
       // if we're creating the left-most line, we don't need faces, so we're done
       if (x === -1) continue;
 
-      const meshGeo = new THREE.Geometry();
+      //const meshGeo = new THREE.Geometry();
       meshGeo.vertices.push(v0, v1, v2, v3);
       meshGeo.faces.push(
-        new THREE.Face3(1, 0, 3, this.meshNormal),
-        new THREE.Face3(2, 1, 3, this.meshNormal)
+        new THREE.Face3(x * 4 + 1, x * 4 + 0, x * 4 + 3),
+        new THREE.Face3(x * 4 + 2, x * 4 + 1, x * 4 + 3)
       );
-      meshGeo.normalsNeedUpdate = true;
 
-      // const meshMat = new THREE.MeshBasicMaterial({ color: `rgb(0, ${lineSat}, ${lineSat})` });
-      const mesh = new THREE.Mesh(meshGeo, this.meshMat);
-      mesh.position.x = x;
-      meshGroup.add(mesh);
+      // const mesh = new THREE.Mesh(meshGeo, this.meshMat);
+      // meshGroup.add(mesh);
     }
 
-    this.zSegs.push({ group, lineGroup, meshGroup });
+    const mesh = new THREE.Mesh(meshGeo, this.meshMat);
+    mesh.position.x = -this.config.segs.x / 2;
+    group.add(mesh);
+
+    this.zSegs.push({ group, lineGroup, mesh });
     this.scene.add(group);
     this.zSegCount++;
   }
@@ -248,13 +261,10 @@ class BackgroundRender extends Component {
     // dispose of geometries and materials allocated for the lines
     for (const line of segment.lineGroup.children) {
       line.geometry.dispose();
-      line.material.dispose();
+      // line.material.dispose();
     }
 
-    for (const mesh of segment.meshGroup.children) {
-      mesh.geometry.dispose();
-      // mesh.material.dispose();
-    }
+    segment.mesh.geometry.dispose();
   }
 
   animate() {
@@ -295,7 +305,9 @@ class BackgroundRender extends Component {
         `textures: ${this.renderer.info.memory.textures}\n` +
         `lines: ${this.renderer.info.render.lines}\n` +
         `triangles: ${this.renderer.info.render.triangles}\n` +
-        `points: ${this.renderer.info.render.points}\n`;
+        `points: ${this.renderer.info.render.points}\n` +
+        `lineMats: ${Object.keys(this.lineMats).length}\n` +
+        `maxLineMat: ${Math.max(...Object.keys(this.lineMats))}\n`;
       this.lastInfoTime = now;
       this.lastFrameCount = this.renderer.info.render.frame;
     }
