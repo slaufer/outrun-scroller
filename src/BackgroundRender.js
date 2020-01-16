@@ -6,19 +6,17 @@ class BackgroundRender extends Component {
   constructor(props) {
     super(props);
 
-    this.nextFrameID = null;
-    this.scene = null;
-    this.camera = null;
-    this.renderer = null;
-    this.container = null;
     this.config = {};
     this.config.segs = {
-      x: 40,
+      x: 30,
       z: 80
     };
-    this.config.cameraPosition = {
-      y: 1.5,
-      z: this.config.segs.z
+    this.config.camera = {
+      fov: 40,
+      position: {
+        y: 1.5,
+        z: this.config.segs.z
+      }
     };
     this.config.terrain = {
       sinFrequency: { x: Math.random(), z: Math.random() },
@@ -35,27 +33,44 @@ class BackgroundRender extends Component {
 
     console.log("Terrain config:", this.config.terrain);
 
+    this.nextFrameID = null;
+    this.scene = null;
+    this.camera = null;
+    this.renderer = null;
+    this.container = null;
     this.lastFrameTime = null;
     this.lastInfoTime = null;
     this.lastFrameCount = null;
+    this.resizeListener = null;
+    this.meshMat = null;
+    this.lineMats = {};
     this.zSegCount = 0;
     this.zSegs = [];
-
-    this.meshMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    this.lineMats = {};
   }
 
   initScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x000011);
-    this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    this.scene.background = new THREE.Color(0x000008);
+    const aspect = (window.innerWidth - 1) / (window.innerHeight - 1);
+    const near = 0.1;
+    const far = 1000;
+    this.camera = new THREE.PerspectiveCamera( this.config.camera.fov, aspect, near, far);
     this.renderer = new THREE.WebGLRenderer();
 
     // move the camera up so that we don't just see a flat line
-    this.camera.position.y = this.config.cameraPosition.y;
-    this.camera.position.z = this.config.cameraPosition.z;
+    this.camera.position.y = this.config.camera.position.y;
+    this.camera.position.z = this.config.camera.position.z;
 
     this.infoContainer = document.querySelector(".background-render-info");
+  }
+
+  _resizeListener() {
+    const width = window.innerWidth - 1;
+    const height = window.innerHeight - 1;
+    const aspect = width / height;
+    this.renderer.setSize(width, height);
+    this.camera.aspect = aspect;
+    this.camera.updateProjectionMatrix();
   }
 
   initViewport() {
@@ -69,9 +84,14 @@ class BackgroundRender extends Component {
     // insert the viewport into the DOM
     this.container = document.querySelector(".background-render-container");
     this.container.insertBefore(this.renderer.domElement, this.container.firstChild);
+
+    this.resizeListener = () => this._resizeListener();
+
+    window.addEventListener("resize", this.resizeListener)
   }
 
   initComponents() {
+    this.meshMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
     /*
     // debug guidelines
     for (let y = 0; y - 1 < this.getMaxY(); y++) {
@@ -197,12 +217,9 @@ class BackgroundRender extends Component {
 
     const lineGroup = new THREE.Group();
     lineGroup.position.x = -this.config.segs.x / 2;
-    lineGroup.position.y = 0.01;
+    lineGroup.position.y = 0.005;
+    lineGroup.position.z = 0.005;
     group.add(lineGroup);
-
-    // const meshGroup = new THREE.Group();
-    // meshGroup.position.x = -this.config.segs.x / 2;
-    // group.add(meshGroup);
 
     const meshGeo = new THREE.Geometry();
 
@@ -234,15 +251,11 @@ class BackgroundRender extends Component {
       // if we're creating the left-most line, we don't need faces, so we're done
       if (x === -1) continue;
 
-      //const meshGeo = new THREE.Geometry();
       meshGeo.vertices.push(v0, v1, v2, v3);
       meshGeo.faces.push(
         new THREE.Face3(x * 4 + 1, x * 4 + 0, x * 4 + 3),
         new THREE.Face3(x * 4 + 2, x * 4 + 1, x * 4 + 3)
       );
-
-      // const mesh = new THREE.Mesh(meshGeo, this.meshMat);
-      // meshGroup.add(mesh);
     }
 
     const mesh = new THREE.Mesh(meshGeo, this.meshMat);
@@ -329,9 +342,19 @@ class BackgroundRender extends Component {
 
   componentWillUnmount() {
     // TODO: dispose scene components
-
     cancelAnimationFrame(this.nextFrameID);
+    window.removeEventListener("resize", this.resizeListener);
     this.container.removeChild(this.renderer.domElement);
+
+    for (const zSeg of this.zSegs) {
+      this.destroyZSegment(zSeg);
+    }
+
+    for (const lineMat of Object.values(this.lineMats)) {
+      lineMat.dispose();
+    }
+
+    this.meshMat.dispose();
     this.scene.dispose();
     this.camera.dispose();
     this.renderer.dispose();
