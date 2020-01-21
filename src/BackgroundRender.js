@@ -8,11 +8,11 @@ class BackgroundRender extends Component {
 
     this.config = {};
     this.config.segs = {
-      x: 30,
-      z: 80
+      x: 40,
+      z: 60
     };
     this.config.camera = {
-      fov: 40,
+      fov: 60,
       position: {
         y: 1.5,
         z: this.config.segs.z
@@ -50,7 +50,7 @@ class BackgroundRender extends Component {
 
   initScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x000008);
+    this.scene.background = new THREE.Color(0x000011);
     const aspect = (window.innerWidth - 1) / (window.innerHeight - 1);
     const near = 0.1;
     const far = 1000;
@@ -117,7 +117,7 @@ class BackgroundRender extends Component {
       [0xfe, 0xff, 0x03] // to #FEFF03
     ];
 
-    const r = this.config.segs.x / 2;
+    const r = this.config.segs.x / 4;
     const accel = 0.02;
     let step = accel;
 
