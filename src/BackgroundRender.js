@@ -9,13 +9,19 @@ class BackgroundRender extends Component {
     this.config = {};
     this.config.segs = {
       x: 40,
-      z: 60
+      z: 80
     };
     this.config.camera = {
       fov: 60,
       position: {
+        x: 0,
         y: 1.5,
         z: this.config.segs.z
+      },
+      rotation: {
+        x: 0,
+        y: 0,
+        z: 0,
       }
     };
     this.config.terrain = {
@@ -42,10 +48,7 @@ class BackgroundRender extends Component {
     this.lastInfoTime = null;
     this.lastFrameCount = null;
     this.resizeListener = null;
-    this.meshMat = null;
-    this.lineMats = {};
-    this.zSegCount = 0;
-    this.zSegs = [];
+    this.zCount = null;
   }
 
   initScene() {
@@ -58,8 +61,12 @@ class BackgroundRender extends Component {
     this.renderer = new THREE.WebGLRenderer();
 
     // move the camera up so that we don't just see a flat line
+    this.camera.position.x = this.config.camera.position.x;
     this.camera.position.y = this.config.camera.position.y;
     this.camera.position.z = this.config.camera.position.z;
+    this.camera.rotation.x = this.config.camera.rotation.x;
+    this.camera.rotation.y = this.config.camera.rotation.y;
+    this.camera.rotation.z = this.config.camera.rotation.z;
 
     this.infoContainer = document.querySelector(".background-render-info");
   }
@@ -90,9 +97,7 @@ class BackgroundRender extends Component {
     window.addEventListener("resize", this.resizeListener)
   }
 
-  initComponents() {
-    this.meshMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    /*
+  drawGuidelines() {
     // debug guidelines
     for (let y = 0; y - 1 < this.getMaxY(); y++) {
       const geo = new THREE.Geometry();
@@ -107,10 +112,11 @@ class BackgroundRender extends Component {
       const line = new THREE.Line(geo, mat);
       this.scene.add(line);
     }
-    */
+  }
 
+  drawSun() {
     //////////////////
-    // IT'S THE SUN //
+    // DRAW THE SUN //
     //////////////////
     const colors = [
       [0xf7, 0x13, 0x9e], // from #F7139E
@@ -147,6 +153,93 @@ class BackgroundRender extends Component {
     // move the sunGroup up so the bottom is flush with z=0
     sunGroup.position.y = r / 2;
     this.scene.add(sunGroup);
+  }
+
+  genTexture(w, h) {
+    const canvas = document.createElement("canvas");
+    canvas.setAttribute("width", w.toString());
+    canvas.setAttribute("height", h.toString())
+    const ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = "black"
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = "#44FFFF";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, w-1, h-1);
+
+    return new THREE.CanvasTexture(canvas, undefined, undefined, undefined, THREE.NearestFilter, THREE.NearestFilter);
+  }
+
+  initTerrain() {
+    // we're going to be using these values a lot, so make some short aliases for them
+    const zc = this.config.segs.z;
+    const xc = this.config.segs.x;
+   
+    // since the "squares" are attached in a plane, we only need (x+1)*(z+1) vertices
+    const position = new Float32Array((this.config.segs.x + 1) * (this.config.segs.z + 1) * 3);
+    const uv = new Float32Array((this.config.segs.x + 1) * (this.config.segs.z + 1) * 2);
+
+    const uStep = 1 / this.config.segs.x;
+    const vStep = 1 / this.config.segs.z;
+   
+    // generate vertices for the corners of each "square" 
+    for (let z = 0; z < zc + 1; z++) {
+      for (let x = 0; x < xc + 1; x++) {
+        const i = (z * (xc + 1) + x) * 3;
+        position[i] = x;
+        position[i+1] = this.getY(x, z);
+        //position[i+1] = 0;
+        position[i+2] = this.config.segs.z - z;
+
+        const j = (z * (xc + 1) + x) * 2;
+        uv[j] = x / this.config.segs.x;
+        uv[j+1] = z / this.config.segs.z;
+      }
+    }
+    
+    const index = [];
+
+    // generate vertex indices for each face
+    for (let z = 0; z < zc; z++) {
+      for (let x = 0; x < xc; x++) {
+        // near/far indices
+        const ni = z * (xc + 1) + x;
+        const fi = (z + 1) * (xc + 1) + x
+
+        index.push(fi+1, fi, ni, ni + 1, fi + 1, ni);
+      }
+    }
+
+    this.zCount = this.config.segs.x;
+
+    // take the vertices and face indices we made and combine them into a geometry
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.setIndex(index);
+
+    // create a material and combine everything into a mesh you fucking coward
+    const texture = this.genTexture(128, 128);
+    texture.repeat.x = this.config.segs.x;
+    texture.repeat.y = this.config.segs.z;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    const material = new THREE.MeshBasicMaterial({ map: texture });
+    const terrain = new THREE.Mesh(geometry, material);
+    terrain.position.x = -this.config.segs.x / 2;
+    this.scene.add(terrain);
+
+    this.terrain = terrain;
+
+    // add a fullbright ambient light, we don't need complex lighting
+    const ambient = new THREE.AmbientLight(0xFFFFFF, 1);
+    this.scene.add(ambient);
+  }
+
+  initComponents() {
+    this.drawSun();
+    this.initTerrain();
   }
 
   getMaxY() {
@@ -194,92 +287,6 @@ class BackgroundRender extends Component {
     return y;
   }
 
-  // this function caches line materials so we aren't constantly creating and destroying them, since
-  // there should be a pretty limited number of possible materials
-  getLineMat(...yVals) {
-    const y = Math.max(...yVals);
-    let lineSat = 255 - (Math.floor(y * 159 / this.getMaxY()) + 96);
-    lineSat = Math.min(lineSat, 255);
-    lineSat = Math.max(lineSat, 0);
-
-    if (!this.lineMats[lineSat]) {
-      this.lineMats[lineSat] = new THREE.LineBasicMaterial({ color: `rgb(0, ${lineSat}, ${lineSat})` });
-    }
-
-    return this.lineMats[lineSat];
-  }
-
-  // creates a z segment and drops it at z=0, to be moved by animate()
-  // featuring the world's shittiest terrain generator
-  createZSegment(zPos = 0) {
-    const group = new THREE.Group();
-    group.position.z = zPos;
-
-    const lineGroup = new THREE.Group();
-    lineGroup.position.x = -this.config.segs.x / 2;
-    lineGroup.position.y = 0.005;
-    lineGroup.position.z = 0.005;
-    group.add(lineGroup);
-
-    const meshGeo = new THREE.Geometry();
-
-    for (let x = -1; x < this.config.segs.x; x++) {
-      const y0 = this.getY(x, this.zSegCount);
-      const y1 = this.getY(x + 1, this.zSegCount);
-      const y2 = this.getY(x + 1, this.zSegCount - 1);
-      const y3 = this.getY(x, this.zSegCount - 1);
-
-      const v0 = new THREE.Vector3(x + 0, y0, 0);
-      const v1 = new THREE.Vector3(x + 1, y1, 0);
-      const v2 = new THREE.Vector3(x + 1, y2, 1);
-      const v3 = new THREE.Vector3(x + 0, y3, 1);
-
-      const lineGeo = new THREE.Geometry();
-      lineGeo.vertices.push(v0, v1, v2);
-
-      // if we're creating the left-most line, we don't need the x-line segment
-      if (x === -1) lineGeo.vertices.shift();
-
-      // if this is the first z-segment, we don't want dangling z-line segments
-      // after the first z-segment is destroyed, subsequent dangling z-lines should be out of the
-      // camera's FOV
-      if (this.zSegCount === 0) lineGeo.vertices.pop();
-
-      const line = new THREE.Line(lineGeo, this.getLineMat(y0, y1, y2));
-      lineGroup.add(line);
-
-      // if we're creating the left-most line, we don't need faces, so we're done
-      if (x === -1) continue;
-
-      meshGeo.vertices.push(v0, v1, v2, v3);
-      meshGeo.faces.push(
-        new THREE.Face3(x * 4 + 1, x * 4 + 0, x * 4 + 3),
-        new THREE.Face3(x * 4 + 2, x * 4 + 1, x * 4 + 3)
-      );
-    }
-
-    const mesh = new THREE.Mesh(meshGeo, this.meshMat);
-    mesh.position.x = -this.config.segs.x / 2;
-    group.add(mesh);
-
-    this.zSegs.push({ group, lineGroup, mesh });
-    this.scene.add(group);
-    this.zSegCount++;
-  }
-
-  destroyZSegment(segment) {
-    // remove the segment from the scene
-    this.scene.remove(segment.group);
-
-    // dispose of geometries and materials allocated for the lines
-    for (const line of segment.lineGroup.children) {
-      line.geometry.dispose();
-      // line.material.dispose();
-    }
-
-    segment.mesh.geometry.dispose();
-  }
-
   animate() {
     // figure out how far we need to move since the last frame
     const now = Date.now();
@@ -287,25 +294,30 @@ class BackgroundRender extends Component {
     const step = (now - this.lastFrameTime) * this.config.speed
     this.lastFrameTime = now;
 
-    // advance z-segments
-    for (const zSeg of this.zSegs) {
-      zSeg.group.position.z += step;
-    }
+    // move the terrain forward
+    this.terrain.position.z += step;
 
-    // destroy any z-segments that have gone beyond the near boundary
-    while (this.zSegs.length > 0 && this.zSegs[0].group.position.z >= this.config.segs.z) {
-      this.destroyZSegment(this.zSegs.shift());
-    }
+    // if the terrain has moved forward by 1, reset it and update the face vectors
+    if (this.terrain.position.z >= 1) {
+      const xc = this.config.segs.x;
+      this.terrain.position.z = 0;
 
-    // if there are no z-segments left, create one at the near boundary so we'll create the rest next
-    if (this.zSegs.length === 0) {
-      this.createZSegment(this.config.segs.z);
-    }
+      const position = this.terrain.geometry.getAttribute("position");
+      const arr = position.array;
 
-    // create new z-segments until we reach the far boundary
-    while (this.zSegs[this.zSegs.length - 1].group.position.z >= 1) {
-      // create the new z-segment right beyond the nearest z-segment
-      this.createZSegment(this.zSegs[this.zSegs.length - 1].group.position.z - 1);
+      const shift = (xc + 1) * 3;
+
+      for (let i = shift + 1; i < arr.length; i += 3) {
+        arr[i-shift] = arr[i];
+      }
+
+      for (let x = 0; x < xc + 1; x++) {
+        const i = arr.length - shift + x * 3 + 1;
+        arr[i] = this.getY(x, this.zCount);
+      }
+
+      this.zCount++;
+      position.needsUpdate = true;
     }
 
     const timeSinceLastInfo = now - this.lastInfoTime;
@@ -318,9 +330,7 @@ class BackgroundRender extends Component {
         `textures: ${this.renderer.info.memory.textures}\n` +
         `lines: ${this.renderer.info.render.lines}\n` +
         `triangles: ${this.renderer.info.render.triangles}\n` +
-        `points: ${this.renderer.info.render.points}\n` +
-        `lineMats: ${Object.keys(this.lineMats).length}\n` +
-        `maxLineMat: ${Math.max(...Object.keys(this.lineMats))}\n`;
+        `points: ${this.renderer.info.render.points}\n`;
       this.lastInfoTime = now;
       this.lastFrameCount = this.renderer.info.render.frame;
     }
@@ -346,15 +356,6 @@ class BackgroundRender extends Component {
     window.removeEventListener("resize", this.resizeListener);
     this.container.removeChild(this.renderer.domElement);
 
-    for (const zSeg of this.zSegs) {
-      this.destroyZSegment(zSeg);
-    }
-
-    for (const lineMat of Object.values(this.lineMats)) {
-      lineMat.dispose();
-    }
-
-    this.meshMat.dispose();
     this.scene.dispose();
     this.camera.dispose();
     this.renderer.dispose();
