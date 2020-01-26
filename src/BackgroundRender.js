@@ -22,13 +22,15 @@ class BackgroundRender extends Component {
       cosOffset: { x: Math.random() * Math.PI, z: Math.random() * Math.PI },
       valleyFactor: 3 / this.config.segs.x,
       valleyPower: 2,
-      modFactor: 3 / this.config.segs.x
+      modFactor: 3 / this.config.segs.x,
+      color: 0x000000,
+      wireframeColor: 0x00CCCC
     };
     this.config.sun = {
       radius: this.config.segs.x / 3.5,
       step: 0.2,
       accel: 0.02,
-      colors: [ [0xf7, 0x13, 0x9e], [0xfe, 0xff, 0x03] ]
+      colors: [ [0xF7, 0x13, 0x9E], [0xFE, 0xFF, 0x03] ]
     };
     this.config.starfield = {
       count: this.config.segs.x * 5,
@@ -52,7 +54,8 @@ class BackgroundRender extends Component {
     this.lastFrameCount = null;
     this.resizeListener = null;
     this.zCount = null;
-    this.terrain = null;
+    this.terrainMesh = null;
+    this.terrainMeshWireframe = null;
     this.stars = null;
   }
 
@@ -197,37 +200,12 @@ class BackgroundRender extends Component {
     }
   }
 
-  // generates the terrain texture
-  genTexture(w, h) {
-    // create an appropriately-sized canvas
-    const canvas = document.createElement("canvas");
-    canvas.setAttribute("width", w.toString());
-    canvas.setAttribute("height", h.toString())
-    const ctx = canvas.getContext("2d");
-
-    // fill the canvas with black
-    ctx.fillStyle = "black"
-    ctx.fillRect(0, 0, w, h);
-
-    // draw a while outlined square around the edges of the canvas
-    ctx.strokeStyle = "#44FFFF";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0, 0, w-1, h-1);
-
-    // return a CanvasTexture that uses NearestFilter so we can actually see the lines at a distance
-    return new THREE.CanvasTexture(canvas, undefined, undefined, undefined, THREE.NearestFilter, THREE.NearestFilter);
-  }
-
   initTerrainMesh() {
     const zc = this.config.segs.z;
     const xc = this.config.segs.x;
    
     // since the "squares" are attached in a plane, we only need (x+1)*(z+1) vertices
-    const position = new Float32Array((this.config.segs.x + 1) * (this.config.segs.z + 1) * 3);
-    const uv = new Float32Array((this.config.segs.x + 1) * (this.config.segs.z + 1) * 2);
-
-    const uStep = 1 / this.config.segs.x;
-    const vStep = 1 / this.config.segs.z;
+    const position = new Float32Array((xc + 1) * (zc + 1) * 3);
    
     // generate vertices for the corners of each "square" 
     for (let z = 0; z < zc + 1; z++) {
@@ -236,10 +214,6 @@ class BackgroundRender extends Component {
         position[i] = x;
         position[i+1] = this.getY(x, z);
         position[i+2] = this.config.segs.z - z;
-
-        const j = (z * (xc + 1) + x) * 2;
-        uv[j] = x / this.config.segs.x;
-        uv[j+1] = z / this.config.segs.z;
       }
     }
     
@@ -262,37 +236,135 @@ class BackgroundRender extends Component {
     // take the vertices and face indices we made and combine them into a geometry
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     geometry.setIndex(index);
 
     // create a material and combine everything into a mesh you fucking coward
-    /*
-    const texture = this.genTexture(192, 192);
-    texture.repeat.x = this.config.segs.x;
-    texture.repeat.y = this.config.segs.z;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    const material = new THREE.MeshBasicMaterial({ map: texture });
-    */
-    const material = new THREE.MeshBasicMaterial({ wireframe: true });
-    const terrain = new THREE.Mesh(geometry, material);
-    terrain.position.x = -this.config.segs.x / 2;
-    this.scene.add(terrain);
-
-    this.terrain = terrain;
+    const material = new THREE.MeshBasicMaterial({ color: this.config.terrain.color });
+    this.terrainMesh = new THREE.Mesh(geometry, material);
+    this.terrainMesh.position.x = -this.config.segs.x / 2;
+    this.scene.add(this.terrainMesh);
   }
 
   initTerrainWireframe() {
     const zc = this.config.segs.z;
     const xc = this.config.segs.x;
 
+    this.terrainWireframe = { xLines: [], zLines: [], group: new THREE.Group() };
+    const material = new THREE.LineBasicMaterial({ color: this.config.terrain.wireframeColor });
+
+    // create zc of x-lines with xc length
+    for (var z = 0; z < zc + 1; z++) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((xc + 1) * 3), 3));
+      this.terrainWireframe.xLines.push(new THREE.Line(geometry, material));
+    }
+
+    // create xc of z-lines with zc length
+    for (var x = 0; x < xc + 1; x++) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((zc + 1) * 3), 3));
+      this.terrainWireframe.zLines.push(new THREE.Line(geometry, material));
+    }
+
+    // update positions of x-lines and z-lines
     for (var z = 0; z < zc + 1; z++) {
       for (var x = 0; x < xc + 1; x++) {
+        const xPos = this.terrainWireframe.xLines[z].geometry.getAttribute('position');
+        const zPos = this.terrainWireframe.zLines[x].geometry.getAttribute('position');
 
+        zPos.array[z*3] = x;
+        zPos.array[z*3+1] = this.getY(x, z);
+        zPos.array[z*3+2] = this.config.segs.z - z;
+
+        xPos.array[x*3] = x;
+        xPos.array[x*3+1] = this.getY(x, z);
+        xPos.array[x*3+2] = this.config.segs.z - z;
       }
     }
 
-    const material = new THREE.LineBasicMaterial({ color: 0xFF0000 });
+    this.terrainWireframe.group.add(...this.terrainWireframe.xLines, ...this.terrainWireframe.zLines);
+    this.terrainWireframe.group.position.x = -this.config.segs.x / 2;
+    this.terrainWireframe.group.position.y = 0.01;
+    this.scene.add(this.terrainWireframe.group);
+  }
+
+  updateTerrainMesh(now) {
+    // move the terrain forward
+    this.terrainMesh.position.z += (now - this.lastFrameTime) * this.config.speed;
+
+    // if the terrain has moved forward by 1, reset it and update the face vectors
+    if (this.terrainMesh.position.z < 1) {
+      return;
+    }
+
+    const xc = this.config.segs.x;
+    this.terrainMesh.position.z = 0;
+
+    const position = this.terrainMesh.geometry.getAttribute("position");
+    const arr = position.array;
+
+    const shift = (xc + 1) * 3;
+
+    // shift up y-coordinates, preserving x,z-coordinates
+    // we can't use Array.copyWithin() here because it would shift up x,z as well
+    for (let i = shift + 1; i < position.array.length; i += 3) {
+      position.array[i-shift] = position.array[i];
+    }
+
+    // populate last row with new y-coordinates
+    for (let x = 0; x < xc + 1; x++) {
+      const i = position.array.length - shift + x * 3 + 1;
+      position.array[i] = this.getY(x, this.zCount);
+    }
+
+    position.needsUpdate = true;
+  }
+
+  updateTerrainWireframe(now) {
+    this.terrainWireframe.group.position.z += (now - this.lastFrameTime) * this.config.speed;
+
+    if (this.terrainWireframe.group.position.z < 1) {
+      return;
+    }
+
+    this.terrainWireframe.group.position.z = 0;
+    const xc = this.config.segs.x;
+    const zc = this.config.segs.z;
+
+    // shift x-lines
+    for (let z = 0; z < zc; z++) {
+      const xPos = this.terrainWireframe.xLines[z].geometry.getAttribute('position');
+      const xPosNext = this.terrainWireframe.xLines[z+1].geometry.getAttribute('position');
+
+      for (let x = 0; x < xc + 1; x++) {
+        xPos.array[x*3+1] = xPosNext.array[x*3+1];
+      }
+
+      xPos.needsUpdate = true;
+    }
+
+    // add new x-line positions
+    const xPosLast = this.terrainWireframe.xLines[this.terrainWireframe.xLines.length - 1].geometry.getAttribute('position');
+
+    for (let x = 0; x < xc + 1; x++) {
+      xPosLast.array[x*3+1] = this.getY(x, this.zCount);
+    }
+
+    xPosLast.needsUpdate = true;
+
+    // shift z-lines
+    for (let x = 0; x < xc + 1; x++) {
+      const zPos = this.terrainWireframe.zLines[x].geometry.getAttribute('position');
+
+      for (let z = 0; z < zc; z++) {
+        zPos.array[z*3+1] = zPos.array[(z+1)*3+1];
+      }
+
+      // add new z-line position
+      zPos.array[zc*3+1] = this.getY(x, this.zCount);
+
+      zPos.needsUpdate = true;
+    }
   }
 
   initTerrain() {
@@ -300,37 +372,10 @@ class BackgroundRender extends Component {
     this.initTerrainWireframe();
   }
 
-  updateTerrain() {
-    const now = Date.now();
-
-    // move the terrain forward
-    this.terrain.position.z += (now - this.lastFrameTime) * this.config.speed;
-
-    // if the terrain has moved forward by 1, reset it and update the face vectors
-    if (this.terrain.position.z >= 1) {
-      const xc = this.config.segs.x;
-      this.terrain.position.z = 0;
-
-      const position = this.terrain.geometry.getAttribute("position");
-      const arr = position.array;
-
-      const shift = (xc + 1) * 3;
-
-      // shift up y-coordinates, preserving x,z-coordinates
-      // we can't use Array.copyWithin() here because it would shift up x,z as well
-      for (let i = shift + 1; i < position.array.length; i += 3) {
-        position.array[i-shift] = position.array[i];
-      }
-
-      // populate last row with new y-coordinates
-      for (let x = 0; x < xc + 1; x++) {
-        const i = position.array.length - shift + x * 3 + 1;
-        position.array[i] = this.getY(x, this.zCount);
-      }
-
-      this.zCount++;
-      position.needsUpdate = true;
-    }
+  updateTerrain(now) {
+    this.updateTerrainMesh(now);
+    this.updateTerrainWireframe(now);
+    this.zCount++;
   }
 
   initComponents() {
@@ -344,6 +389,12 @@ class BackgroundRender extends Component {
 
     // initialize last frame time
     this.lastFrameTime = Date.now();
+  }
+
+  updateComponents() {
+    const now = Date.now();
+    this.updateStarfield(now);
+    this.updateTerrain(now);
   }
 
   getMaxY() {
@@ -393,8 +444,7 @@ class BackgroundRender extends Component {
 
   animate() {
     // figure out how far we need to move since the last frame
-    this.updateStarfield();
-    this.updateTerrain();
+    this.updateComponents();
 
     const timeSinceLastInfo = Date.now() - this.lastInfoTime;
     if (this.renderer && timeSinceLastInfo >= 1000) {
