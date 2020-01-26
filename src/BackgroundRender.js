@@ -7,34 +7,37 @@ class BackgroundRender extends Component {
     super(props);
 
     this.config = {};
-    this.config.segs = {
-      x: 40,
-      z: 80
-    };
+    this.config.segs = { x: 40, z: 90 };
     this.config.camera = {
       fov: 60,
-      position: {
-        x: 0,
-        y: 1.5,
-        z: this.config.segs.z
-      },
-      rotation: {
-        x: 0,
-        y: 0,
-        z: 0,
-      }
+      position: { x: 0, y: 3, z: this.config.segs.z },
+      rotation: { x: 0, y: 0, z: 0, }
     };
     this.config.terrain = {
-      sinFrequency: { x: Math.random(), z: Math.random() },
+      sinFrequency: { x: Math.random() * 2, z: Math.random() * 2 },
       sinIntensity: { x: 0.025 * this.config.segs.x, z: 0.025 * this.config.segs.x },
       sinOffset: { x: Math.random() * Math.PI, z: Math.random() * Math.PI },
-      cosFrequency: { x: Math.random(), z: Math.random() },
+      cosFrequency: { x: Math.random() * 2, z: Math.random() * 2 },
       cosIntensity: { x: 0.025 * this.config.segs.x, z: 0.025 * this.config.segs.x },
       cosOffset: { x: Math.random() * Math.PI, z: Math.random() * Math.PI },
       valleyFactor: 3 / this.config.segs.x,
       valleyPower: 2,
       modFactor: 3 / this.config.segs.x
     };
+    this.config.sun = {
+      radius: this.config.segs.x / 3.5,
+      step: 0.2,
+      accel: 0.02,
+      colors: [ [0xf7, 0x13, 0x9e], [0xfe, 0xff, 0x03] ]
+    };
+    this.config.starfield = {
+      count: this.config.segs.x * 5,
+      minSpeed: 0.01,
+      speedFactor: 0.05,
+      origin: -this.config.segs.z * 2,
+      color: 0xFFFFFF
+    };
+    this.config.backgroundColor = 0x000000;
     this.config.speed = 0.01;
 
     console.log("Terrain config:", this.config.terrain);
@@ -49,11 +52,13 @@ class BackgroundRender extends Component {
     this.lastFrameCount = null;
     this.resizeListener = null;
     this.zCount = null;
+    this.terrain = null;
+    this.stars = null;
   }
 
   initScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x000011);
+    this.scene.background = new THREE.Color(this.config.backgroundColor);
     const aspect = (window.innerWidth - 1) / (window.innerHeight - 1);
     const near = 0.1;
     const far = 1000;
@@ -114,18 +119,12 @@ class BackgroundRender extends Component {
     }
   }
 
-  drawSun() {
-    //////////////////
-    // DRAW THE SUN //
-    //////////////////
-    const colors = [
-      [0xf7, 0x13, 0x9e], // from #F7139E
-      [0xfe, 0xff, 0x03] // to #FEFF03
-    ];
+  initSun() {
+    const colors = this.config.sun.colors;
 
-    const r = this.config.segs.x / 4;
-    const accel = 0.02;
-    let step = accel;
+    const r = this.config.sun.radius;
+    let step = this.config.sun.step;
+    const accel = this.config.sun.accel;
 
     // group all of the sun components to make the location translation easier
     let sunGroup = new THREE.Group();
@@ -155,24 +154,71 @@ class BackgroundRender extends Component {
     this.scene.add(sunGroup);
   }
 
+  configStar(star) {
+    const r = this.config.segs.x + this.config.segs.x * Math.random() / 2;
+    const angle = Math.random() * Math.PI / 2;
+    star.line.position.x = r * Math.cos(angle) * (Math.random() > 0.5 ? 1 : -1);
+    star.line.position.y = r * Math.sin(angle);
+    star.line.position.z = this.config.starfield.origin;
+    star.speed = Math.max(this.config.starfield.minSpeed, Math.random() * this.config.starfield.speedFactor);
+  }
+
+  initStarfield() {
+    const geometry = new THREE.Geometry();
+    geometry.vertices.push(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 2));
+
+    const material = new THREE.LineBasicMaterial({ color: this.config.starfield.color });
+
+    this.stars = [];
+
+    for (let i = 0; i < this.config.starfield.count; i++) {
+      const star = { line: new THREE.Line(geometry, material) };
+      this.configStar(star);
+      // randomize the star's starting position so that the starfield is pre-populated
+      star.line.position.z =  this.config.starfield.origin + Math.random() * (this.config.segs.z - this.config.starfield.origin);
+
+      this.stars.push(star);
+      this.scene.add(star.line);
+    }
+  }
+
+  updateStarfield() {
+    const now = Date.now();
+    const since = now - this.lastFrameTime;
+    const xc = this.config.segs.x;
+
+    for (const star of this.stars) {
+      star.line.position.z += since * star.speed;
+
+      // if the star has reached the near boundary, reconfigure and reset it
+      if (star.line.position.z >= this.config.segs.z) {
+        this.configStar(star);
+      }
+    }
+  }
+
+  // generates the terrain texture
   genTexture(w, h) {
+    // create an appropriately-sized canvas
     const canvas = document.createElement("canvas");
     canvas.setAttribute("width", w.toString());
     canvas.setAttribute("height", h.toString())
     const ctx = canvas.getContext("2d");
 
+    // fill the canvas with black
     ctx.fillStyle = "black"
     ctx.fillRect(0, 0, w, h);
 
+    // draw a while outlined square around the edges of the canvas
     ctx.strokeStyle = "#44FFFF";
     ctx.lineWidth = 1;
     ctx.strokeRect(0, 0, w-1, h-1);
 
+    // return a CanvasTexture that uses NearestFilter so we can actually see the lines at a distance
     return new THREE.CanvasTexture(canvas, undefined, undefined, undefined, THREE.NearestFilter, THREE.NearestFilter);
   }
 
-  initTerrain() {
-    // we're going to be using these values a lot, so make some short aliases for them
+  initTerrainMesh() {
     const zc = this.config.segs.z;
     const xc = this.config.segs.x;
    
@@ -189,7 +235,6 @@ class BackgroundRender extends Component {
         const i = (z * (xc + 1) + x) * 3;
         position[i] = x;
         position[i+1] = this.getY(x, z);
-        //position[i+1] = 0;
         position[i+2] = this.config.segs.z - z;
 
         const j = (z * (xc + 1) + x) * 2;
@@ -200,14 +245,15 @@ class BackgroundRender extends Component {
     
     const index = [];
 
-    // generate vertex indices for each face
+    // generate face vertex indices for each face
     for (let z = 0; z < zc; z++) {
       for (let x = 0; x < xc; x++) {
         // near/far indices
         const ni = z * (xc + 1) + x;
         const fi = (z + 1) * (xc + 1) + x
-
-        index.push(fi+1, fi, ni, ni + 1, fi + 1, ni);
+        
+        // add two triangle faces to form one "square"
+        index.push(fi + 1, fi, ni, ni + 1, fi + 1, ni);
       }
     }
 
@@ -220,26 +266,84 @@ class BackgroundRender extends Component {
     geometry.setIndex(index);
 
     // create a material and combine everything into a mesh you fucking coward
-    const texture = this.genTexture(128, 128);
+    /*
+    const texture = this.genTexture(192, 192);
     texture.repeat.x = this.config.segs.x;
     texture.repeat.y = this.config.segs.z;
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     const material = new THREE.MeshBasicMaterial({ map: texture });
+    */
+    const material = new THREE.MeshBasicMaterial({ wireframe: true });
     const terrain = new THREE.Mesh(geometry, material);
     terrain.position.x = -this.config.segs.x / 2;
     this.scene.add(terrain);
 
     this.terrain = terrain;
+  }
+
+  initTerrainWireframe() {
+    const zc = this.config.segs.z;
+    const xc = this.config.segs.x;
+
+    for (var z = 0; z < zc + 1; z++) {
+      for (var x = 0; x < xc + 1; x++) {
+
+      }
+    }
+
+    const material = new THREE.LineBasicMaterial({ color: 0xFF0000 });
+  }
+
+  initTerrain() {
+    this.initTerrainMesh();
+    this.initTerrainWireframe();
+  }
+
+  updateTerrain() {
+    const now = Date.now();
+
+    // move the terrain forward
+    this.terrain.position.z += (now - this.lastFrameTime) * this.config.speed;
+
+    // if the terrain has moved forward by 1, reset it and update the face vectors
+    if (this.terrain.position.z >= 1) {
+      const xc = this.config.segs.x;
+      this.terrain.position.z = 0;
+
+      const position = this.terrain.geometry.getAttribute("position");
+      const arr = position.array;
+
+      const shift = (xc + 1) * 3;
+
+      // shift up y-coordinates, preserving x,z-coordinates
+      // we can't use Array.copyWithin() here because it would shift up x,z as well
+      for (let i = shift + 1; i < position.array.length; i += 3) {
+        position.array[i-shift] = position.array[i];
+      }
+
+      // populate last row with new y-coordinates
+      for (let x = 0; x < xc + 1; x++) {
+        const i = position.array.length - shift + x * 3 + 1;
+        position.array[i] = this.getY(x, this.zCount);
+      }
+
+      this.zCount++;
+      position.needsUpdate = true;
+    }
+  }
+
+  initComponents() {
+    this.initSun();
+    this.initStarfield();
+    this.initTerrain();
 
     // add a fullbright ambient light, we don't need complex lighting
     const ambient = new THREE.AmbientLight(0xFFFFFF, 1);
     this.scene.add(ambient);
-  }
 
-  initComponents() {
-    this.drawSun();
-    this.initTerrain();
+    // initialize last frame time
+    this.lastFrameTime = Date.now();
   }
 
   getMaxY() {
@@ -289,38 +393,10 @@ class BackgroundRender extends Component {
 
   animate() {
     // figure out how far we need to move since the last frame
-    const now = Date.now();
-    this.lastFrameTime = this.lastFrameTime || now;
-    const step = (now - this.lastFrameTime) * this.config.speed
-    this.lastFrameTime = now;
+    this.updateStarfield();
+    this.updateTerrain();
 
-    // move the terrain forward
-    this.terrain.position.z += step;
-
-    // if the terrain has moved forward by 1, reset it and update the face vectors
-    if (this.terrain.position.z >= 1) {
-      const xc = this.config.segs.x;
-      this.terrain.position.z = 0;
-
-      const position = this.terrain.geometry.getAttribute("position");
-      const arr = position.array;
-
-      const shift = (xc + 1) * 3;
-
-      for (let i = shift + 1; i < arr.length; i += 3) {
-        arr[i-shift] = arr[i];
-      }
-
-      for (let x = 0; x < xc + 1; x++) {
-        const i = arr.length - shift + x * 3 + 1;
-        arr[i] = this.getY(x, this.zCount);
-      }
-
-      this.zCount++;
-      position.needsUpdate = true;
-    }
-
-    const timeSinceLastInfo = now - this.lastInfoTime;
+    const timeSinceLastInfo = Date.now() - this.lastInfoTime;
     if (this.renderer && timeSinceLastInfo >= 1000) {
       const fps = Math.floor((this.renderer.info.render.frame - this.lastFrameCount) / timeSinceLastInfo * 1000);
       this.infoContainer.innerText =
@@ -331,12 +407,13 @@ class BackgroundRender extends Component {
         `lines: ${this.renderer.info.render.lines}\n` +
         `triangles: ${this.renderer.info.render.triangles}\n` +
         `points: ${this.renderer.info.render.points}\n`;
-      this.lastInfoTime = now;
+      this.lastInfoTime = Date.now();
       this.lastFrameCount = this.renderer.info.render.frame;
     }
 
     // render the frame, and set up the next frame request
     this.renderer.render(this.scene, this.camera);
+    this.lastFrameTime = Date.now();
     this.nextFrameID = requestAnimationFrame(() => this.animate());
   }
 
