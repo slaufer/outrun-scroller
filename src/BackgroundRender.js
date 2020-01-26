@@ -14,10 +14,10 @@ class BackgroundRender extends Component {
       rotation: { x: 0, y: 0, z: 0, }
     };
     this.config.terrain = {
-      sinFrequency: { x: Math.random() * 2, z: Math.random() * 2 },
+      sinFrequency: { x: Math.random(), z: Math.random() },
       sinIntensity: { x: 0.025 * this.config.segs.x, z: 0.025 * this.config.segs.x },
       sinOffset: { x: Math.random() * Math.PI, z: Math.random() * Math.PI },
-      cosFrequency: { x: Math.random() * 2, z: Math.random() * 2 },
+      cosFrequency: { x: Math.random(), z: Math.random() },
       cosIntensity: { x: 0.025 * this.config.segs.x, z: 0.025 * this.config.segs.x },
       cosOffset: { x: Math.random() * Math.PI, z: Math.random() * Math.PI },
       valleyFactor: 3 / this.config.segs.x,
@@ -227,7 +227,11 @@ class BackgroundRender extends Component {
         const fi = (z + 1) * (xc + 1) + x
         
         // add two triangle faces to form one "square"
-        index.push(fi + 1, fi, ni, ni + 1, fi + 1, ni);
+        if (x >= this.config.segs.x / 2) {
+          index.push(fi + 1, fi, ni, ni + 1, fi + 1, ni);
+        } else {
+          index.push(fi, ni, ni + 1, fi + 1, fi, ni + 1);
+        }
       }
     }
 
