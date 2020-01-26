@@ -7,7 +7,7 @@ class BackgroundRender extends Component {
     super(props);
 
     this.config = {};
-    this.config.segs = { x: 40, z: 90 };
+    this.config.segs = { x: 40, z: 80 };
     this.config.camera = {
       fov: 60,
       position: { x: 0, y: 3, z: this.config.segs.z },
@@ -235,8 +235,6 @@ class BackgroundRender extends Component {
       }
     }
 
-    this.zCount = this.config.segs.x;
-
     // take the vertices and face indices we made and combine them into a geometry
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
@@ -369,17 +367,19 @@ class BackgroundRender extends Component {
 
       zPos.needsUpdate = true;
     }
+
+    this.zCount++;
   }
 
   initTerrain() {
     this.initTerrainMesh();
     this.initTerrainWireframe();
+    this.zCount = this.config.segs.z;
   }
 
   updateTerrain(now) {
     this.updateTerrainMesh(now);
     this.updateTerrainWireframe(now);
-    this.zCount++;
   }
 
   initComponents() {
