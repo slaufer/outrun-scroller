@@ -7,10 +7,10 @@ class BackgroundRender extends Component {
     super(props);
 
     this.config = {};
-    this.config.segs = { x: 40, z: 80 };
+    this.config.segs = { x: 60, z: 120 };
     this.config.camera = {
       fov: 60,
-      position: { x: 0, y: 3, z: this.config.segs.z },
+      position: { x: 0, y: 1.5, z: this.config.segs.z },
       rotation: { x: 0, y: 0, z: 0, }
     };
     this.config.terrain = {
